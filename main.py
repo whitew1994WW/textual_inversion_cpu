@@ -35,7 +35,6 @@ def load_model_from_config(config, ckpt, verbose=False):
         print("unexpected keys:")
         print(u)
 
-    model.cuda()
     return model
 
 def get_parser(**parser_kwargs):
@@ -301,8 +300,9 @@ class SetupCallback(Callback):
         if trainer.global_rank == 0:
             print("Summoning checkpoint.")
             ckpt_path = os.path.join(self.ckptdir, "last.ckpt")
+            print(f'Checkopoint path: {ckpt_path}')
             trainer.save_checkpoint(ckpt_path)
-
+    
     def on_pretrain_routine_start(self, trainer, pl_module):
         if trainer.global_rank == 0:
             # Create logdirs and save configs
@@ -445,23 +445,10 @@ class CUDACallback(Callback):
     # see https://github.com/SeanNaren/minGPT/blob/master/mingpt/callback.py
     def on_train_epoch_start(self, trainer, pl_module):
         # Reset the memory use counter
-        torch.cuda.reset_peak_memory_stats(trainer.root_gpu)
-        torch.cuda.synchronize(trainer.root_gpu)
         self.start_time = time.time()
 
     def on_train_epoch_end(self, trainer, pl_module):
-        torch.cuda.synchronize(trainer.root_gpu)
-        max_memory = torch.cuda.max_memory_allocated(trainer.root_gpu) / 2 ** 20
         epoch_time = time.time() - self.start_time
-
-        try:
-            max_memory = trainer.training_type_plugin.reduce(max_memory)
-            epoch_time = trainer.training_type_plugin.reduce(epoch_time)
-
-            rank_zero_info(f"Average Epoch time: {epoch_time:.2f} seconds")
-            rank_zero_info(f"Average Peak memory {max_memory:.2f}MiB")
-        except AttributeError:
-            pass
 
 class ModeSwapCallback(Callback):
 
@@ -808,6 +795,8 @@ if __name__ == "__main__":
         if not opt.no_test and not trainer.interrupted:
             trainer.test(model, data)
     except Exception:
+        print(f"Configs are {configs}")
+        
         if opt.debug and trainer.global_rank == 0:
             try:
                 import pudb as debugger
